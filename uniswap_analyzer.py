@@ -13,31 +13,78 @@ from selenium.webdriver.support import expected_conditions as EC
 import time
 import re
 import sys
+import requests
+import json
+
+def get_eth_price_from_api():
+    """
+    Получает текущий курс ETH через API CoinGecko
+    """
+    try:
+        url = "https://api.coingecko.com/api/v3/simple/price?ids=ethereum&vs_currencies=usd"
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            eth_price = data['ethereum']['usd']
+            print(f"Получен курс ETH через API: ${eth_price:,.2f}")
+            return eth_price
+        else:
+            print(f"Ошибка API: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"Ошибка при получении курса ETH через API: {e}")
+        return None
 
 def extract_position_data_selenium(url):
     """
     Извлекает данные о позиции с помощью Selenium (эмуляция браузера)
     """
     options = Options()
-    options.add_argument('--headless')
+    # Используем headless режим с дополнительными настройками
+    options.add_argument('--headless=new')
     options.add_argument('--disable-gpu')
     options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--window-size=1920,1080')
-    options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36')
+    options.add_argument('--user-agent=Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+    
+    # Дополнительные опции для обхода блокировки
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
     
     driver = webdriver.Chrome(options=options)
+    
+    # Выполняем JavaScript для скрытия автоматизации
+    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+    
     try:
         print("Открываем страницу...")
         driver.get(url)
         
         # Ждем загрузки страницы
         print("Ждем загрузки данных...")
-        time.sleep(10)
+        time.sleep(15)  # Увеличиваем время ожидания
         
         # Сохраняем HTML для отладки
         with open('debug_page.html', 'w', encoding='utf-8') as f:
             f.write(driver.page_source)
         print("HTML страницы сохранен в debug_page.html")
+        
+        # Проверяем, не попали ли мы на страницу ошибки
+        if "ERR_" in driver.page_source or "error" in driver.title.lower():
+            print("Обнаружена страница ошибки. Пробуем альтернативный подход...")
+            # Попробуем перейти на главную страницу Uniswap
+            driver.get("https://app.uniswap.org/")
+            time.sleep(10)
+            # Теперь попробуем перейти к позиции
+            driver.get(url)
+            time.sleep(15)
+            
+            # Сохраняем обновленный HTML
+            with open('debug_page.html', 'w', encoding='utf-8') as f:
+                f.write(driver.page_source)
+            print("Обновленный HTML страницы сохранен в debug_page.html")
         
         # Ищем все элементы с текстом
         all_elements = driver.find_elements(By.XPATH, "//*[text()]")
@@ -53,6 +100,17 @@ def extract_position_data_selenium(url):
         print("Примеры элементов с $:")
         for i, text in enumerate(dollar_texts[:5]):
             print(f"  {i+1}: {text}")
+        
+        # Если не нашли элементы с $, попробуем найти любые числа
+        if not dollar_texts:
+            print("Не найдены элементы с $. Ищем любые числовые значения...")
+            # Используем более простой подход - ищем все элементы с текстом и фильтруем по наличию цифр
+            all_text_elements = driver.find_elements(By.XPATH, "//*[text()]")
+            number_texts = [el.text for el in all_text_elements if any(c.isdigit() for c in el.text) and el.text.strip()]
+            print(f"Найдено {len(number_texts)} элементов с числами")
+            print("Примеры элементов с числами:")
+            for i, text in enumerate(number_texts[:10]):
+                print(f"  {i+1}: {text}")
         
         position_usd = None
         eth_rate = None
@@ -145,7 +203,7 @@ def extract_position_data_selenium(url):
                     # Заменяем запятые на точки для правильного парсинга
                     value = match.replace(' ', '').replace(',', '.')
                     val = float(value)
-                    if 2000 <= val <= 2500:  # Курс ETH в диапазоне 2000-2500
+                    if 2000 <= val <= 3000:  # Курс ETH в диапазоне 2000-3000
                         eth_rate = val
                         print(f"Найдено значение курса ETH: ${eth_rate:,.2f}")
                         break
@@ -169,7 +227,7 @@ def extract_position_data_selenium(url):
                                 # Заменяем запятые на точки для правильного парсинга
                                 value = number_match.group(1).replace(' ', '').replace(',', '.')
                                 val = float(value)
-                                if 2000 <= val <= 2500:
+                                if 2000 <= val <= 3000:
                                     eth_rate = val
                                     print(f"Найдено значение курса ETH: ${eth_rate:,.2f} в тексте: {text}")
                                     break
@@ -211,12 +269,31 @@ def extract_position_data_selenium(url):
                         value = re.sub(r'(\d),(\d)', r'\1\2', value)
                         val = float(value)
                         print(f"  Преобразовано в число: {val}")
-                        if 2000 <= val <= 2500:
+                        if 2000 <= val <= 3000:
                             eth_rate = val
                             print(f"Найдено значение курса ETH: ${eth_rate:,.2f}")
                             break
                     except Exception as e:
                         print(f"  Ошибка преобразования: {e}")
+                        continue
+                if eth_rate:
+                    break
+        
+        # Если все еще не нашли курс ETH, попробуем найти в тексте элементов
+        if not eth_rate and number_texts:
+            print("Ищем курс ETH в тексте элементов...")
+            for text in number_texts:
+                # Ищем числа в диапазоне 2000-3000
+                numbers = re.findall(r'(\d{1,3}(?:[,\s]\d{3})*(?:[.,]\d+)?)', text)
+                for num_str in numbers:
+                    try:
+                        value = num_str.replace(' ', '').replace(',', '.')
+                        val = float(value)
+                        if 2000 <= val <= 3000:
+                            eth_rate = val
+                            print(f"Найдено значение курса ETH: ${eth_rate:,.2f} в тексте: {text}")
+                            break
+                    except:
                         continue
                 if eth_rate:
                     break
@@ -249,13 +326,22 @@ def main():
     # Извлекаем данные с помощью Selenium
     position_usd, eth_rate = extract_position_data_selenium(url)
     
-    if position_usd is None or eth_rate is None:
-        print("Не удалось извлечь данные с веб-страницы.")
+    # Если не удалось найти курс ETH на странице, используем API
+    if eth_rate is None:
+        print("Не удалось найти курс ETH на странице. Используем API...")
+        eth_rate = get_eth_price_from_api()
+    
+    if position_usd is None:
+        print("Не удалось извлечь данные о позиции с веб-страницы.")
         print("Возможные причины:")
         print("1. Страница требует JavaScript для загрузки данных")
         print("2. Изменилась структура страницы")
         print("3. Проблемы с сетевым подключением")
         print("4. Проверьте файл debug_page.html для анализа структуры страницы")
+        return
+    
+    if eth_rate is None:
+        print("Не удалось получить курс ETH ни с веб-страницы, ни через API.")
         return
     
     print(f"Размер позиции: ${position_usd:,.2f}")

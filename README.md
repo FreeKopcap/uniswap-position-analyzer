@@ -9,6 +9,7 @@
 1. **Извлечение данных с веб-страницы Uniswap:**
    - Размер позиции в USD (`positionUSD`)
    - Курс ETH (`ethRate`)
+   - Fallback через API CoinGecko, если курс не найден на странице
 
 2. **Вычисления:**
    - Текущая стоимость начального эфира (`ethInitial * ethRate`)
@@ -45,13 +46,26 @@ pip3 install -r requirements.txt
 
 ### Запуск
 
-#### Способ 1: Использование shell скрипта (рекомендуется)
+#### Способ 1: Использование shell скрипта с виртуальным окружением (рекомендуется)
+
+```bash
+./run_analysis_venv.sh
+```
+
+Этот скрипт автоматически:
+- Создает виртуальное окружение Python (если не существует)
+- Активирует виртуальное окружение
+- Устанавливает все зависимости из requirements.txt
+- Запускает анализ позиции
+- Деактивирует виртуальное окружение
+
+#### Способ 2: Использование обычного shell скрипта
 
 ```bash
 ./run_analysis.sh
 ```
 
-#### Способ 2: Ручной запуск
+#### Способ 3: Ручной запуск
 
 ```bash
 python3 uniswap_analyzer.py
@@ -61,12 +75,14 @@ python3 uniswap_analyzer.py
 
 ```
 UniswapPositions/
-├── uniswap_analyzer.py    # Основной скрипт анализа
-├── requirements.txt       # Зависимости Python
-├── run_analysis.sh       # Shell скрипт для запуска
-├── README.md             # Документация
-├── .gitignore           # Исключения для git
-└── uniswapAnalize.txt   # Задание для анализа
+├── uniswap_analyzer.py      # Основной скрипт анализа
+├── requirements.txt         # Зависимости Python
+├── run_analysis_venv.sh     # Shell скрипт для запуска с виртуальным окружением
+├── run_analysis.sh          # Shell скрипт для запуска
+├── README.md                # Документация
+├── .gitignore              # Исключения для git
+├── uniswapAnalize.txt      # Задание для анализа
+└── venv/                   # Виртуальное окружение Python (создается автоматически)
 ```
 
 ## Пример вывода
