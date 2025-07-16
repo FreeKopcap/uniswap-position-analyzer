@@ -15,6 +15,50 @@ import re
 import sys
 import requests
 import json
+import argparse
+
+# === КОНСТАНТЫ ===
+ETH_RATE_MIN = 2000  # Минимально допустимый курс ETH для поиска
+ETH_RATE_MAX = 4000  # Максимально допустимый курс ETH для поиска
+POSITION_ID = "59044"  # Номер позиции Uniswap
+ETH_INITIAL = 38.1  # Начальное количество ETH
+
+def parse_arguments():
+    """
+    Парсит аргументы командной строки
+    """
+    parser = argparse.ArgumentParser(
+        description='Анализатор позиций Uniswap V3',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Примеры использования:
+  python3 uniswap_analyzer.py
+  python3 uniswap_analyzer.py -p 12345 -i 50.0
+  python3 uniswap_analyzer.py --eth_min 1500 --eth_max 3500 --position 67890 --eth_initial 25.5
+        """
+    )
+    
+    parser.add_argument('-n', '--eth_min', 
+                       type=float, 
+                       default=ETH_RATE_MIN,
+                       help=f'Минимальный курс ETH для поиска (по умолчанию: {ETH_RATE_MIN})')
+    
+    parser.add_argument('-x', '--eth_max', 
+                       type=float, 
+                       default=ETH_RATE_MAX,
+                       help=f'Максимальный курс ETH для поиска (по умолчанию: {ETH_RATE_MAX})')
+    
+    parser.add_argument('-p', '--position', 
+                       type=str, 
+                       default=POSITION_ID,
+                       help=f'Номер позиции Uniswap (по умолчанию: {POSITION_ID})')
+    
+    parser.add_argument('-i', '--eth_initial', 
+                       type=float, 
+                       default=ETH_INITIAL,
+                       help=f'Начальное количество ETH (по умолчанию: {ETH_INITIAL})')
+    
+    return parser.parse_args()
 
 def get_eth_price_from_api():
     """
@@ -35,7 +79,7 @@ def get_eth_price_from_api():
         print(f"Ошибка при получении курса ETH через API: {e}")
         return None
 
-def extract_position_data_selenium(url):
+def extract_position_data_selenium(url, eth_min, eth_max):
     """
     Извлекает данные о позиции с помощью Selenium (эмуляция браузера)
     """
@@ -203,7 +247,7 @@ def extract_position_data_selenium(url):
                     # Заменяем запятые на точки для правильного парсинга
                     value = match.replace(' ', '').replace(',', '.')
                     val = float(value)
-                    if 2000 <= val <= 3000:  # Курс ETH в диапазоне 2000-3000
+                    if eth_min <= val <= eth_max:  # Курс ETH в заданном диапазоне
                         eth_rate = val
                         print(f"Найдено значение курса ETH: ${eth_rate:,.2f}")
                         break
@@ -227,7 +271,7 @@ def extract_position_data_selenium(url):
                                 # Заменяем запятые на точки для правильного парсинга
                                 value = number_match.group(1).replace(' ', '').replace(',', '.')
                                 val = float(value)
-                                if 2000 <= val <= 3000:
+                                if eth_min <= val <= eth_max:
                                     eth_rate = val
                                     print(f"Найдено значение курса ETH: ${eth_rate:,.2f} в тексте: {text}")
                                     break
@@ -269,7 +313,7 @@ def extract_position_data_selenium(url):
                         value = re.sub(r'(\d),(\d)', r'\1\2', value)
                         val = float(value)
                         print(f"  Преобразовано в число: {val}")
-                        if 2000 <= val <= 3000:
+                        if eth_min <= val <= eth_max:
                             eth_rate = val
                             print(f"Найдено значение курса ETH: ${eth_rate:,.2f}")
                             break
@@ -283,13 +327,13 @@ def extract_position_data_selenium(url):
         if not eth_rate and number_texts:
             print("Ищем курс ETH в тексте элементов...")
             for text in number_texts:
-                # Ищем числа в диапазоне 2000-3000
+                # Ищем числа в заданном диапазоне
                 numbers = re.findall(r'(\d{1,3}(?:[,\s]\d{3})*(?:[.,]\d+)?)', text)
                 for num_str in numbers:
                     try:
                         value = num_str.replace(' ', '').replace(',', '.')
                         val = float(value)
-                        if 2000 <= val <= 3000:
+                        if eth_min <= val <= eth_max:
                             eth_rate = val
                             print(f"Найдено значение курса ETH: ${eth_rate:,.2f} в тексте: {text}")
                             break
@@ -312,19 +356,20 @@ def main():
     """
     Основная функция скрипта
     """
-    # URL позиции Uniswap
-    url = "https://app.uniswap.org/positions/v3/unichain/59044"
+    # Парсим аргументы командной строки
+    args = parse_arguments()
     
-    # Константа начального количества ETH
-    eth_initial = 38.1
+    # URL позиции Uniswap
+    url = f"https://app.uniswap.org/positions/v3/unichain/{args.position}"
     
     print("Анализ позиции Uniswap...")
     print(f"URL: {url}")
-    print(f"Начальное количество ETH: {eth_initial}")
+    print(f"Начальное количество ETH: {args.eth_initial}")
+    print(f"Диапазон поиска курса ETH: ${args.eth_min:,.0f} - ${args.eth_max:,.0f}")
     print("-" * 50)
     
     # Извлекаем данные с помощью Selenium
-    position_usd, eth_rate = extract_position_data_selenium(url)
+    position_usd, eth_rate = extract_position_data_selenium(url, args.eth_min, args.eth_max)
     
     # Если не удалось найти курс ETH на странице, используем API
     if eth_rate is None:
@@ -349,7 +394,7 @@ def main():
     print("-" * 50)
     
     # Вычисления
-    current_eth_value = eth_initial * eth_rate
+    current_eth_value = args.eth_initial * eth_rate
     current_position_in_eth = position_usd / eth_rate
     
     # Вывод результатов сравнения
@@ -359,7 +404,7 @@ def main():
     print("-" * 50)
     
     print("СРАВНЕНИЕ 2:")
-    print(f"Начальное вложение эфира: {eth_initial} ETH")
+    print(f"Начальное вложение эфира: {args.eth_initial} ETH")
     print(f"Текущее значение позиции в эфирах: {current_position_in_eth:.4f} ETH")
     print("-" * 50)
     
@@ -369,10 +414,10 @@ def main():
     else:
         print(f"Позиция показывает прибыль: ${position_usd - current_eth_value:,.2f}")
     
-    if current_position_in_eth > eth_initial:
-        print(f"Позиция в ETH показывает рост: +{current_position_in_eth - eth_initial:.4f} ETH")
+    if current_position_in_eth > args.eth_initial:
+        print(f"Позиция в ETH показывает рост: +{current_position_in_eth - args.eth_initial:.4f} ETH")
     else:
-        print(f"Позиция в ETH показывает падение: {current_position_in_eth - eth_initial:.4f} ETH")
+        print(f"Позиция в ETH показывает падение: {current_position_in_eth - args.eth_initial:.4f} ETH")
 
 if __name__ == "__main__":
     main() 
